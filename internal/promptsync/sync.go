@@ -136,10 +136,27 @@ func generateTargets(configPath string) ([]generatedTarget, string, bool, error)
 		return nil, "", false, err
 	}
 
+	rules, err := loadRules(config, library)
+	if err != nil {
+		return nil, "", false, err
+	}
+
 	generated := make([]generatedTarget, 0, len(config.Targets))
 	for _, target := range config.Targets {
 		output := content
-		if target.Template != "" {
+		var extra []generatedTarget
+		if target.Preset != "" {
+			preset, err := lookupPreset(target.Preset)
+			if err != nil {
+				return nil, "", false, err
+			}
+			main := content
+			if _, native := scopedFormats[preset.Name]; !native {
+				main = foldRules(content, rules)
+			}
+			output = renderPreset(preset, config.Source, main)
+			extra = ruleTargets(preset, rules)
+		} else if target.Template != "" {
 			values := make(map[string]any, len(config.Variables)+1)
 			for key, value := range config.Variables {
 				values[key] = value
@@ -160,6 +177,15 @@ func generateTargets(configPath string) ([]generatedTarget, string, bool, error)
 			}
 		}
 		generated = append(generated, generatedTarget{path: target.Path, content: []byte(output)})
+		generated = append(generated, extra...)
+	}
+	seen := make(map[string]struct{}, len(generated))
+	for _, target := range generated {
+		key := filepath.Clean(target.path)
+		if _, exists := seen[key]; exists {
+			return nil, "", false, fmt.Errorf("duplicate generated path %q (check rule names and targets)", target.path)
+		}
+		seen[key] = struct{}{}
 	}
 	return generated, root, config.AllowExternalTargets, nil
 }

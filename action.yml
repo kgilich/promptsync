@@ -1,0 +1,41 @@
+name: PromptSync check
+description: Fail the build when generated AI instruction files (CLAUDE.md, AGENTS.md, Cursor rules, ...) are missing or out of date.
+branding:
+  icon: check-circle
+  color: blue
+
+inputs:
+  config:
+    description: Path to promptsync.yaml, relative to the repository root.
+    default: promptsync.yaml
+  version:
+    description: PromptSync version to install (a Go module version such as v0.3.0, or latest).
+    default: latest
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-go@v6
+      with:
+        go-version: stable
+        cache: false
+    - name: Install PromptSync
+      shell: bash
+      run: go install "github.com/kgilich/promptsync/cmd/promptsync@${{ inputs.version }}"
+    - name: Restore pinned library
+      shell: bash
+      env:
+        CONFIG: ${{ inputs.config }}
+      run: |
+        if grep -q '^library:' "$CONFIG"; then
+          "$(go env GOPATH)/bin/promptsync" install -config "$CONFIG"
+        fi
+    - name: Check generated files
+      shell: bash
+      env:
+        CONFIG: ${{ inputs.config }}
+      run: |
+        if ! "$(go env GOPATH)/bin/promptsync" sync --check -config "$CONFIG"; then
+          echo "::error::AI instruction files are out of date. Run 'promptsync sync' and commit the result."
+          exit 1
+        fi

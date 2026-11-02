@@ -16,6 +16,7 @@ type Config struct {
 	Source               string            `yaml:"source"`
 	Variables            map[string]string `yaml:"variables"`
 	Targets              []Target          `yaml:"targets"`
+	Rules                []Rule            `yaml:"rules,omitempty"`
 	AllowExternalTargets bool              `yaml:"allow_external_targets,omitempty"`
 }
 
@@ -24,9 +25,13 @@ type Library struct {
 	Ref        string `yaml:"ref"`
 }
 
+// Target is one generated file. Set Preset to use a built-in tool layout
+// (path defaults to the tool's conventional location), or Template for a
+// custom one; with neither, the rendered source is written as is.
 type Target struct {
 	Path     string `yaml:"path"`
 	Template string `yaml:"template"`
+	Preset   string `yaml:"preset,omitempty"`
 }
 
 func loadConfig(path string) (Config, string, error) {
@@ -39,6 +44,12 @@ func loadConfig(path string) (Config, string, error) {
 	if err := yaml.Unmarshal(contents, &config); err != nil {
 		return Config{}, "", fmt.Errorf("parse config %q: %w", path, err)
 	}
+	if err := config.normalizeRules(); err != nil {
+		return Config{}, "", err
+	}
+	if err := config.applyPresetPaths(); err != nil {
+		return Config{}, "", err
+	}
 	if err := config.validate(); err != nil {
 		return Config{}, "", err
 	}
@@ -48,6 +59,26 @@ func loadConfig(path string) (Config, string, error) {
 		return Config{}, "", fmt.Errorf("resolve config directory: %w", err)
 	}
 	return config, root, nil
+}
+
+func (config *Config) applyPresetPaths() error {
+	for index, target := range config.Targets {
+		if target.Preset == "" {
+			continue
+		}
+		preset, err := lookupPreset(target.Preset)
+		if err != nil {
+			return fmt.Errorf("target %d: %w", index+1, err)
+		}
+		if target.Template != "" {
+			return fmt.Errorf("target %d: preset and template cannot be combined", index+1)
+		}
+		config.Targets[index].Preset = preset.Name
+		if strings.TrimSpace(target.Path) == "" {
+			config.Targets[index].Path = preset.Path
+		}
+	}
+	return nil
 }
 
 func (config Config) validate() error {

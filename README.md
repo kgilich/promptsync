@@ -1,35 +1,95 @@
 # PromptSync
 
-**One source of truth for AI coding instructions.** Write your project guidance once in Markdown, then render it into the instruction files your tools already use.
+**One source of truth for AI coding instructions.** Every AI coding tool wants its own file — `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`, `.github/copilot-instructions.md`, Cursor `.mdc` rules, Windsurf, Cline, Junie… PromptSync lets you write your project guidance once in Markdown and generates all of them, keeps them from drifting, and verifies them in CI.
 
 [![Go](https://img.shields.io/badge/Go-1.22%2B-00ADD8?logo=go&logoColor=white)](https://go.dev/)
 [![CI](https://github.com/kgilich/promptsync/actions/workflows/ci.yml/badge.svg)](https://github.com/kgilich/promptsync/actions/workflows/ci.yml)
 
-Generate files for GitHub Copilot, Claude Code, Cursor, and other tools from one prompt library. Keep it local, or share it across projects through Git. A committed lockfile makes every project use the same library revision.
+Keep the library local, or share it across projects through Git. A committed lockfile makes every project use the same library revision.
 
 ## Get started
-
-### Local prompt library
-
-Install PromptSync from this checkout:
 
 ```sh
 go install ./cmd/promptsync
 ```
 
-In the project where you want the generated instructions:
+**New project** — pick the tools your team uses:
 
 ```sh
-promptsync init
-```
-
-Edit `prompts/master.md`, then generate the configured instruction files:
-
-```sh
+promptsync init -tools claude,cursor,copilot,agents
 promptsync sync
 ```
 
-`init` creates a starter `promptsync.yaml`, Markdown source, and target templates. It will not overwrite existing scaffold files.
+**Project that already has instruction files?** Adopt them instead of rewriting:
+
+```sh
+promptsync import          # merges CLAUDE.md, AGENTS.md, .cursorrules, ... into prompts/master.md
+promptsync sync --force    # replace the originals with generated files
+```
+
+Identical rules found in several files are imported once; differing ones are kept as separate sections for you to reconcile.
+
+Edit `prompts/master.md`, run `promptsync sync`, and commit both the source and the generated files.
+
+### Built-in presets
+
+Targets can use a `preset` instead of a hand-written template. A preset knows the tool's file location and required front matter (e.g. Cursor's `alwaysApply`), and adds a "generated, do not edit" banner.
+
+```yaml
+version: 1
+source: prompts/master.md
+variables:
+  Project: Example App
+targets:
+  - preset: claude
+  - preset: cursor
+  - preset: copilot
+  - preset: agents
+    path: docs/AGENTS.md   # optional: override the default location
+```
+
+Run `promptsync presets` to list them: `agents`, `amazonq`, `claude`, `cline`, `continue`, `copilot`, `cursor`, `gemini`, `junie`, `windsurf`. Custom `template:` targets still work for anything else (`preset` and `template` cannot be combined).
+
+### Scoped rules
+
+Some guidance only applies to part of a codebase. Declare it as a `rule` with `globs`:
+
+```yaml
+rules:
+  - source: prompts/frontend.md
+    globs: ["src/**/*.tsx", "*.css"]
+    description: React conventions
+```
+
+Tools with native scoped rules get one file per rule, using their own syntax: Cursor (`.cursor/rules/frontend.mdc`), Copilot (`.github/instructions/frontend.instructions.md` with `applyTo`), Claude Code (`.claude/rules/frontend.md` with `paths`), Windsurf, and Continue. Tools without that feature (`agents`, `gemini`, `junie`, `cline`, `amazonq`) get the rule appended to their main file under an "Applies to: …" heading. Rule sources are templates too and share `variables`. The rule name defaults to the file name; set `name:` to override it. Rules apply to preset targets only.
+
+### Watch mode
+
+```sh
+promptsync sync --watch
+```
+
+Re-syncs whenever the source, a rule, a template, or the config changes. A manually edited target is reported and left alone (unless `--force`), and the watch keeps running.
+
+### CI check
+
+Keep generated files honest in pull requests with the bundled GitHub Action:
+
+```yaml
+# .github/workflows/promptsync.yml
+name: PromptSync
+on: [pull_request]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: kgilich/promptsync@main   # pin a tag or commit SHA in real use
+```
+
+It installs PromptSync, restores the locked library revision if you use a remote one, and runs `promptsync sync --check`.
 
 ### Shared Git library
 
@@ -44,12 +104,9 @@ source: prompts/master.md
 variables:
   Project: Example App
 targets:
-  - path: .github/copilot-instructions.md
-    template: templates/copilot.tmpl
-  - path: CLAUDE.md
-    template: templates/claude.tmpl
-  - path: .cursorrules
-    template: templates/cursor.tmpl
+  - preset: claude
+  - preset: cursor
+  - preset: copilot
 ```
 
 Fetch the latest configured revision and render it:
@@ -72,12 +129,15 @@ Run `promptsync update` only when you intentionally want to move to a newer revi
 
 | Command | What it does |
 | --- | --- |
-| `promptsync init [-dir PATH]` | Create a starter prompt library. |
+| `promptsync init [-dir PATH] [-tools a,b]` | Create a starter prompt library for the chosen tool presets. |
+| `promptsync import [-dir PATH]` | Adopt existing instruction files (CLAUDE.md, AGENTS.md, .cursorrules, ...) as the source. |
+| `promptsync presets` | List built-in tool presets. |
 | `promptsync update [-config PATH]` | Fetch the configured Git library and update `promptsync.lock`. |
 | `promptsync install [-config PATH]` | Install the exact commit from `promptsync.lock` without changing it. |
 | `promptsync status [-config PATH]` | Report each target as `missing`, `current`, or `modified`. |
 | `promptsync sync [-config PATH]` | Render and write all configured targets. |
 | `promptsync sync --check [-config PATH]` | Check target freshness without writing; fail if any target is missing or modified. |
+| `promptsync sync --watch [-config PATH]` | Re-sync automatically when inputs change. |
 | `promptsync sync --force [-config PATH]` | Overwrite targets that differ from generated content. |
 | `promptsync help` | Show command usage. |
 
