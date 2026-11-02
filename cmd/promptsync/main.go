@@ -1,10 +1,13 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"time"
 
 	"github.com/kgilich/promptsync/internal/promptsync"
 )
@@ -66,11 +69,29 @@ func run(args []string) error {
 		config := flags.String("config", "promptsync.yaml", "path to configuration file")
 		check := flags.Bool("check", false, "check generated targets without writing files")
 		force := flags.Bool("force", false, "overwrite modified targets")
+		watch := flags.Bool("watch", false, "re-sync automatically when the source, rules, or config change")
 		if err := flags.Parse(args[1:]); err != nil {
 			return err
 		}
 		if flags.NArg() != 0 {
 			return usageError()
+		}
+		if *watch {
+			if *check {
+				return fmt.Errorf("--watch and --check cannot be used together")
+			}
+			ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+			defer stop()
+			fmt.Println("Watching for changes; press Ctrl+C to stop.")
+			return promptsync.Watch(ctx, *config, promptsync.SyncOptions{Force: *force}, 500*time.Millisecond, func(event promptsync.WatchEvent) {
+				if event.Err != nil {
+					fmt.Fprintln(os.Stderr, "promptsync:", event.Err)
+					return
+				}
+				for _, path := range event.Written {
+					fmt.Println("Wrote", path)
+				}
+			})
 		}
 		if *check && *force {
 			return fmt.Errorf("--check and --force cannot be used together")
@@ -142,7 +163,7 @@ func run(args []string) error {
 		printStatuses(statuses)
 		return nil
 	case "help", "-h", "--help":
-		fmt.Print("Usage: promptsync <init|import|presets|update|install|status|sync> [options]\n\nCommands:\n  init               Create a starter library and configuration\n  update             Fetch the configured remote prompt library and advance the lock\n  install            Fetch the exact library revision from the lockfile\n  status             Show whether configured targets are current\n  sync               Render the library into configured target files\n  sync --check       Check target freshness without writing files\n  sync --force       Overwrite modified targets\n")
+		fmt.Print("Usage: promptsync <init|import|presets|update|install|status|sync> [options]\n\nCommands:\n  init [-tools a,b]  Create a starter library and configuration\n  import             Adopt existing CLAUDE.md, AGENTS.md, .cursorrules, ... as the source\n  presets            List built-in tool presets\n  update             Fetch the configured remote prompt library and advance the lock\n  install            Fetch the exact library revision from the lockfile\n  status             Show whether configured targets are current\n  sync               Render the library into configured target files\n  sync --check       Check target freshness without writing files\n  sync --force       Overwrite modified targets\n  sync --watch       Re-sync automatically when inputs change\n")
 		return nil
 	default:
 		return usageError()

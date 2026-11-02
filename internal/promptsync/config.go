@@ -16,6 +16,7 @@ type Config struct {
 	Source               string            `yaml:"source"`
 	Variables            map[string]string `yaml:"variables"`
 	Targets              []Target          `yaml:"targets"`
+	Rules                []Rule            `yaml:"rules,omitempty"`
 	AllowExternalTargets bool              `yaml:"allow_external_targets,omitempty"`
 }
 
@@ -42,6 +43,9 @@ func loadConfig(path string) (Config, string, error) {
 	var config Config
 	if err := yaml.Unmarshal(contents, &config); err != nil {
 		return Config{}, "", fmt.Errorf("parse config %q: %w", path, err)
+	}
+	if err := config.normalizeRules(); err != nil {
+		return Config{}, "", err
 	}
 	if err := config.applyPresetPaths(); err != nil {
 		return Config{}, "", err
