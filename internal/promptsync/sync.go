@@ -139,7 +139,13 @@ func generateTargets(configPath string) ([]generatedTarget, string, bool, error)
 	generated := make([]generatedTarget, 0, len(config.Targets))
 	for _, target := range config.Targets {
 		output := content
-		if target.Template != "" {
+		if target.Preset != "" {
+			preset, err := lookupPreset(target.Preset)
+			if err != nil {
+				return nil, "", false, err
+			}
+			output = renderPreset(preset, config.Source, content)
+		} else if target.Template != "" {
 			values := make(map[string]any, len(config.Variables)+1)
 			for key, value := range config.Variables {
 				values[key] = value
