@@ -61,7 +61,7 @@ rules:
     description: React conventions
 ```
 
-Tools with native scoped rules get one file per rule, using their own syntax: Cursor (`.cursor/rules/frontend.mdc`), Copilot (`.github/instructions/frontend.instructions.md` with `applyTo`), Claude Code (`.claude/rules/frontend.md` with `paths`), Windsurf, and Continue. Tools without that feature (`agents`, `gemini`, `junie`, `cline`, `amazonq`) get the rule appended to their main file under an "Applies to: …" heading. Rule sources are templates too and share `variables`. The rule name defaults to the file name; set `name:` to override it. Rules apply to preset targets only.
+Tools with native scoped rules get one file per rule, using their own syntax: Cursor (`.cursor/rules/frontend.mdc`), Copilot (`.github/instructions/frontend.instructions.md` with `applyTo`), Claude Code (`.claude/rules/frontend.md` with `paths`), Windsurf, and Continue. Comma-containing globs such as `*.{ts,tsx}` are expanded for tools that take a comma-separated list. Tools without that feature (`agents`, `gemini`, `junie`, `cline`, `amazonq`) get the rule appended to their main file under an "Applies to: …" heading. Rule sources are templates too and share `variables`. The rule name defaults to the file name; set `name:` to override it. Targets without a `preset` (custom `template:` or a plain `path:`) also receive every rule folded into their content. Rule files always use the tool's default directory, even if the preset target overrides `path:`.
 
 ### Watch mode
 

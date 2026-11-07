@@ -35,7 +35,7 @@ func run(args []string) error {
 		if flags.NArg() != 0 {
 			return usageError()
 		}
-		if err := promptsync.InitWithTools(*root, strings.Split(*tools, ",")); err != nil {
+		if err := promptsync.InitWithTools(*root, splitList(*tools)); err != nil {
 			return err
 		}
 		fmt.Printf("Initialized PromptSync in %s\n", *root)
@@ -57,9 +57,18 @@ func run(args []string) error {
 			fmt.Println("Imported", path)
 		}
 		fmt.Printf("Created promptsync.yaml and prompts/master.md for: %s\n", strings.Join(result.Tools, ", "))
+		if result.Differing {
+			fmt.Println("Warning: the files had different content. master.md keeps each version as a section and every tool will receive all of them; trim tool-specific parts before syncing.")
+		}
 		fmt.Println("Review prompts/master.md, then run 'promptsync sync --force' to replace the imported files with generated ones.")
+		for _, path := range result.Leftover {
+			fmt.Printf("Note: %s is a legacy file that PromptSync will not regenerate; delete it after syncing to avoid duplicate rules.\n", path)
+		}
 		return nil
 	case "presets":
+		if len(args) != 1 {
+			return usageError()
+		}
 		for _, preset := range promptsync.Presets() {
 			fmt.Printf("%-9s %-38s %s\n", preset.Name, preset.Path, preset.Tool)
 		}
@@ -178,4 +187,14 @@ func printStatuses(statuses []promptsync.TargetStatus) {
 
 func usageError() error {
 	return fmt.Errorf("usage: promptsync <init|import|presets|update|install|status|sync> [options] (run 'promptsync help' for details)")
+}
+
+func splitList(value string) []string {
+	var items []string
+	for _, item := range strings.Split(value, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
+		}
+	}
+	return items
 }

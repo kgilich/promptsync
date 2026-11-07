@@ -81,3 +81,45 @@ func readTestFile(t *testing.T, root, path string) string {
 	}
 	return string(data)
 }
+
+func TestImportKeepsHorizontalRuleContentAndFlagsLegacyFiles(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "CLAUDE.md", "---\n# Intro\nKeep this.\n---\nAnd this.\n")
+	writeTestFile(t, root, ".cursorrules", "---\n---\nCursor only.\n")
+
+	result, err := Import(root)
+	if err != nil {
+		t.Fatalf("Import() error = %v", err)
+	}
+	master := readTestFile(t, root, "prompts/master.md")
+	for _, want := range []string{"Keep this.", "And this.", "Cursor only."} {
+		if !strings.Contains(master, want) {
+			t.Errorf("master missing %q:\n%s", want, master)
+		}
+	}
+	if strings.Contains(master, "\n---\n---") {
+		t.Errorf("empty front matter left in master:\n%s", master)
+	}
+	if len(result.Leftover) != 1 || result.Leftover[0] != ".cursorrules" || !result.Differing {
+		t.Fatalf("result = %+v", result)
+	}
+}
+
+func TestScopedRulesExpandBracesForCommaSeparatedFormats(t *testing.T) {
+	root := t.TempDir()
+	writeTestFile(t, root, "promptsync.yaml", "version: 1\nsource: master.md\nrules:\n  - source: r.md\n    globs: [\"src/**/*.{ts,tsx}\"]\ntargets:\n  - preset: cursor\n  - preset: claude\n  - path: PLAIN.md\n")
+	writeTestFile(t, root, "master.md", "# Main\n")
+	writeTestFile(t, root, "r.md", "Rule body.\n")
+	if _, err := Sync(filepath.Join(root, "promptsync.yaml")); err != nil {
+		t.Fatalf("Sync() error = %v", err)
+	}
+	if got := readTestFile(t, root, ".cursor/rules/r.mdc"); !strings.Contains(got, `globs: "src/**/*.ts,src/**/*.tsx"`) {
+		t.Errorf("cursor globs not expanded:\n%s", got)
+	}
+	if got := readTestFile(t, root, ".claude/rules/r.md"); !strings.Contains(got, `"src/**/*.{ts,tsx}"`) {
+		t.Errorf("claude list should keep braces:\n%s", got)
+	}
+	if got := readTestFile(t, root, "PLAIN.md"); !strings.Contains(got, "Rule body.") {
+		t.Errorf("plain target dropped the rule:\n%s", got)
+	}
+}

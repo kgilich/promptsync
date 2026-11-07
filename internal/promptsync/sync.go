@@ -141,9 +141,11 @@ func generateTargets(configPath string) ([]generatedTarget, string, bool, error)
 		return nil, "", false, err
 	}
 
+	// Targets without a preset have no native scoped-rule format, so rules are folded in.
+	plain := foldRules(content, rules)
 	generated := make([]generatedTarget, 0, len(config.Targets))
 	for _, target := range config.Targets {
-		output := content
+		output := plain
 		var extra []generatedTarget
 		if target.Preset != "" {
 			preset, err := lookupPreset(target.Preset)
@@ -161,7 +163,7 @@ func generateTargets(configPath string) ([]generatedTarget, string, bool, error)
 			for key, value := range config.Variables {
 				values[key] = value
 			}
-			values["Content"] = content
+			values["Content"] = plain
 
 			if err := validatePathWithin(library, target.Template, false, "template"); err != nil {
 				return nil, "", false, err

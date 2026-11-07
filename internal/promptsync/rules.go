@@ -28,7 +28,9 @@ type scopedFormat struct {
 	frontmatter func(rule Rule) string
 }
 
-func quoteGlobs(globs []string) string { return strconv.Quote(strings.Join(globs, ",")) }
+func quoteGlobs(globs []string) string {
+	return strconv.Quote(strings.Join(expandAllBraces(globs), ","))
+}
 
 func yamlList(key string, values []string) string {
 	var out strings.Builder
@@ -123,6 +125,9 @@ func loadRules(config Config, library string) ([]renderedRule, error) {
 
 // foldRules appends scoped rules to a main file for tools without native support.
 func foldRules(content string, rules []renderedRule) string {
+	if len(rules) == 0 {
+		return content
+	}
 	var out strings.Builder
 	out.WriteString(strings.TrimRight(content, "\n"))
 	out.WriteString("\n")
@@ -148,4 +153,29 @@ func ruleTargets(preset Preset, rules []renderedRule) []generatedTarget {
 		})
 	}
 	return targets
+}
+
+var braceGroup = regexp.MustCompile(`\{([^{}]*)\}`)
+
+// expandBraces rewrites "src/**/*.{ts,tsx}" as ["src/**/*.ts", "src/**/*.tsx"]
+// for tools that take a comma-separated glob string, where a comma inside
+// braces would be misread as a list separator.
+func expandBraces(glob string) []string {
+	match := braceGroup.FindStringSubmatchIndex(glob)
+	if match == nil {
+		return []string{glob}
+	}
+	var expanded []string
+	for _, option := range strings.Split(glob[match[2]:match[3]], ",") {
+		expanded = append(expanded, expandBraces(glob[:match[0]]+option+glob[match[1]:])...)
+	}
+	return expanded
+}
+
+func expandAllBraces(globs []string) []string {
+	var expanded []string
+	for _, glob := range globs {
+		expanded = append(expanded, expandBraces(glob)...)
+	}
+	return expanded
 }
